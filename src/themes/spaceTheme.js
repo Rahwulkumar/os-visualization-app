@@ -260,7 +260,7 @@ export const Comet = ({ delay = 0, duration = 5 }) => {
   );
 };
 
-// Asteroid component
+
 export const Asteroid = ({ size = 30, position = { x: 50, y: 50 } }) => {
   const asteroidRef = useRef(null);
   
