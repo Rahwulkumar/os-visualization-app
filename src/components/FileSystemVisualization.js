@@ -145,7 +145,7 @@ const FileSystemVisualization = () => {
       realWorldContext: "This is like saving a note in Google Docs.",
       detailedExplanation: {
         beginner: `When you want to create a new file, you type its name in a text editor or file manager. This sends a request to the operating system to create the file. Think of it like telling your computer "I want to make a new document called ${fileName}".`,
-        intermediate: `The application calls the open() system call with the O_CREAT flag, which tells the kernel to create a new file if it doesn't exist. The system call transitions from user mode to kernel mode, where the OS handles the file creation process. Parameters include the filename, creation flags (O_CREAT | O_WRONLY), and permissions (0644).`
+        intermediate: `The application calls the open() system call with the O_CREAT flag, which tells the kernel to create a new file if it doesn&apos;t exist. The system call transitions from user mode to kernel mode, where the OS handles the file creation process. Parameters include the filename, creation flags (O_CREAT | O_WRONLY), and permissions (0644).`
       }
     },
     {
@@ -155,8 +155,8 @@ const FileSystemVisualization = () => {
       intermediateFeedback: "The OS checks the directory's inode (#5) for write permissions (rwx).",
       realWorldContext: "The cloud app checks if you can save in the folder.",
       detailedExplanation: {
-        beginner: `Before creating any file, the computer checks if you can add files to that folder. It's like checking if you have the key to a room before you can put something inside. The system looks at the folder's settings to see if you're allowed to write (add) files there.`,
-        intermediate: `The kernel examines the target directory's inode to verify write permissions. It checks the permission bits (rwx for owner/group/others) and compares them against the current user's credentials (UID/GID). The directory must have write permission for the user to create new files. This security check prevents unauthorized file creation and maintains file system integrity.`
+        beginner: `Before creating any file, the computer checks if you can add files to that folder. It&apos;s like checking if you have the key to a room before you can put something inside. The system looks at the folder&apos;s settings to see if you&apos;re allowed to write (add) files there.`,
+        intermediate: `The kernel examines the target directory&apos;s inode to verify write permissions. It checks the permission bits (rwx for owner/group/others) and compares them against the current user&apos;s credentials (UID/GID). The directory must have write permission for the user to create new files. This security check prevents unauthorized file creation and maintains file system integrity.`
       }
     },
     {
@@ -173,23 +173,23 @@ const FileSystemVisualization = () => {
     {
       title: "Directory Update",
       description: "Link filename to new inode",
-      beginnerFeedback: `The file '${fileName}' is added to the folder's list.`,
+      beginnerFeedback: `The file &apos;${fileName}&apos; is added to the folder&apos;s list.`,
       intermediateFeedback: `The directory table links '${fileName}' to inode #10, updating the directory's inode.`,
       realWorldContext: "Your file appears in the folder listing.",
       detailedExplanation: {
-        beginner: `Now the computer adds your file's name to the folder's list of contents. It's like writing the file name on the folder's table of contents, so when you look inside the folder later, you can see your file listed there. The folder remembers both the name and where to find the actual file information.`,
-        intermediate: `The directory is updated by adding a new directory entry that maps the filename to the allocated inode number. Directory entries contain the filename and corresponding inode number. The parent directory's inode is also updated to reflect the new size and modification time. This creates the namespace link between the human-readable filename and the system's internal inode reference.`
+        beginner: `Now the computer adds your file&apos;s name to the folder&apos;s list of contents. It&apos;s like writing the file name on the folder&apos;s table of contents, so when you look inside the folder later, you can see your file listed there. The folder remembers both the name and where to find the actual file information.`,
+        intermediate: `The directory is updated by adding a new directory entry that maps the filename to the allocated inode number. Directory entries contain the filename and corresponding inode number. The parent directory&apos;s inode is also updated to reflect the new size and modification time. This creates the namespace link between the human-readable filename and the system&apos;s internal inode reference.`
       }
     },
     {
       title: "Disk Block Allocation",
       description: "Reserve storage space (if needed)",
-      beginnerFeedback: `The system reserves ${newFileSize}KB of space on the disk for the file's data.`,
+      beginnerFeedback: `The system reserves ${newFileSize}KB of space on the disk for the file&apos;s data.`,
       intermediateFeedback: `The OS allocates block #${100 + storedData.files.length} for file data (${newFileSize}KB) using SSTF scheduling.`,
       realWorldContext: "Storage space is reserved for your file content.",
       detailedExplanation: {
         beginner: `Your file needs ${newFileSize}KB of space to store its content. The computer finds an empty storage location on the hard drive and reserves it for your file. This is like claiming a parking spot - the space is now marked as belonging to your file so no other files can use it.`,
-        intermediate: `The OS allocates ${newFileSize}KB worth of data blocks from the free block bitmap. Block allocation uses disk scheduling algorithms like SSTF (Shortest Seek Time First) to minimize disk head movement and optimize performance. The inode's block pointers are updated to reference these allocated blocks, establishing the link between file metadata and actual data storage.`
+        intermediate: `The OS allocates ${newFileSize}KB worth of data blocks from the free block bitmap. Block allocation uses disk scheduling algorithms like SSTF (Shortest Seek Time First) to minimize disk head movement and optimize performance. The inode&apos;s block pointers are updated to reference these allocated blocks, establishing the link between file metadata and actual data storage.`
       }
     },
     {
@@ -199,18 +199,18 @@ const FileSystemVisualization = () => {
       intermediateFeedback: "The superblock updates: Free Inodes = 996, Free Blocks = 4996.",
       realWorldContext: "The system updates its storage tracking.",
       detailedExplanation: {
-        beginner: `The computer keeps a master record of how much storage space is available and how many files can still be created. After creating your file, it updates this record to show that one less file slot is available and slightly less storage space remains. It's like updating an inventory list after using supplies.`,
+        beginner: `The computer keeps a master record of how much storage space is available and how many files can still be created. After creating your file, it updates this record to show that one less file slot is available and slightly less storage space remains. It&apos;s like updating an inventory list after using supplies.`,
         intermediate: `The superblock, which contains critical file system metadata, is updated to reflect the consumed resources. Free inode and block counts are decremented, and the modification timestamp is updated. This ensures file system consistency and provides accurate space utilization information. The superblock update may be cached in memory and written to disk periodically or immediately, depending on the file system's consistency guarantees.`
       }
     },
     {
       title: "Response to User",
       description: "Confirm file creation success",
-      beginnerFeedback: `The file '${fileName}' is ready to use!`,
+      beginnerFeedback: `The file &apos;${fileName}&apos; is ready to use!`,
       intermediateFeedback: "The OS returns file descriptor #3, confirming file creation.",
       realWorldContext: "Your file is now saved and ready to edit!",
       detailedExplanation: {
-        beginner: `The computer confirms that your file has been successfully created! You'll see it appear in your folder, and you can now open it, edit it, or share it. The file creation process is complete, and your new file is ready to use whenever you need it.`,
+        beginner: `The computer confirms that your file has been successfully created! You&apos;ll see it appear in your folder, and you can now open it, edit it, or share it. The file creation process is complete, and your new file is ready to use whenever you need it.`,
         intermediate: `The kernel returns a file descriptor (a small integer) to the calling process, confirming successful file creation. This file descriptor serves as a handle for subsequent file operations (read, write, close). The system call completes, transitioning back to user mode, and the application receives confirmation that the file is ready for use. All file system structures are now consistent and persistent.`
       }
     }
@@ -752,10 +752,10 @@ const FileSystemVisualization = () => {
             <div className="mb-6">
               <h3 className="text-2xl font-bold mb-3">
                 <GradientText gradient={spaceColors.gradient.nebula}>
-                  Step {currentStep + 1}: {stepDescriptions[currentStep]?.title.replace(/'/g, "&apos;")}
+                  Step {currentStep + 1}: {stepDescriptions[currentStep]?.title}
                 </GradientText>
               </h3>
-              <p className="text-gray-300 text-lg">{stepDescriptions[currentStep]?.description.replace(/'/g, "&apos;")}</p>
+              <p className="text-gray-300 text-lg">{stepDescriptions[currentStep]?.description}</p>
             </div>
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -765,7 +765,7 @@ const FileSystemVisualization = () => {
                 <p className="text-white">{currentEvent}</p>
                 {stepDescriptions[currentStep] && (
                   <p className="text-gray-400 text-sm mt-2">
-                    💡 {stepDescriptions[currentStep].realWorldContext.replace(/'/g, "&apos;")}
+                    💡 {stepDescriptions[currentStep].realWorldContext}
                   </p>
                 )}
               </div>
@@ -774,7 +774,7 @@ const FileSystemVisualization = () => {
               <div className="bg-gray-800/50 p-4 rounded-lg border border-white/10">
                 <h4 className="text-lg font-bold text-purple-400 mb-2">Detailed Explanation</h4>
                 <p className="text-white text-sm leading-relaxed">
-                  {stepDescriptions[currentStep]?.detailedExplanation?.[mode]?.replace(/'/g, "&apos;")}
+                  {stepDescriptions[currentStep]?.detailedExplanation?.[mode]}
                 </p>
               </div>
             </div>
@@ -812,10 +812,10 @@ const FileSystemVisualization = () => {
               <div className="bg-gray-800/50 p-3 rounded mb-4">
                 <p className="text-sm text-gray-300">
                   {errorType === 'storage_full' && 
-                    `This error occurs during the "Disk Block Allocation" step when the file system doesn't have enough free space to store the new file. The OS checks available space before allocating blocks.`
+                    `This error occurs during the "Disk Block Allocation" step when the file system doesn&apos;t have enough free space to store the new file. The OS checks available space before allocating blocks.`
                   }
                   {errorType === 'permission' && 
-                    "This error occurs during the \"Permission Check\" step when the user doesn't have write access to the target directory."
+                    "This error occurs during the \"Permission Check\" step when the user doesn&apos;t have write access to the target directory."
                   }
                   {errorType === 'full' && 
                     "This error occurs during the \"Inode Allocation\" step when no free inodes are available for new files."
