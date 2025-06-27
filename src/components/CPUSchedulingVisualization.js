@@ -1,5 +1,5 @@
 'use client'
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   StarField, 
   NebulaBackground, 
@@ -68,7 +68,7 @@ const CPUSchedulingVisualization = () => {
   };
 
   // Windows scheduling algorithm
-  const scheduleProcesses = () => {
+  const scheduleProcesses = useCallback(() => {
     if (isPaused) return;
 
     // Group processes by priority
@@ -149,7 +149,7 @@ const CPUSchedulingVisualization = () => {
     }
     
     setCpuCores(newCpuCores);
-  };
+  }, [isPaused, processes, cpuCores, simulationSpeed, setCurrentEvent, setCpuCores, setContextSwitches, setExecutionHistory, timeElapsed]);
 
   // Update process statistics
   const updateProcessStats = (deltaTime) => {
@@ -185,7 +185,7 @@ const CPUSchedulingVisualization = () => {
 
     animationRef.current = requestAnimationFrame(animate);
     return () => cancelAnimationFrame(animationRef.current);
-  }, [isPaused, simulationSpeed, processes, cpuCores]);
+  }, [isPaused, simulationSpeed, processes, cpuCores, scheduleProcesses]);
 
   // Calculate CPU utilization
   const cpuUtilization = (cpuCores.filter(core => core !== null).length / cpuCores.length) * 100;

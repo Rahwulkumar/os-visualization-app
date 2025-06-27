@@ -301,7 +301,7 @@ const FileSystemVisualization = () => {
         }
         break;
     }
-  }, [currentStep, mode, fileName, newFileSize, storedData, showError]);
+  }, [currentStep, mode, fileName, newFileSize, storedData, showError, stepDescriptions]);
 
   const handleStepChange = (step) => {
     setCurrentStep(step);
@@ -755,7 +755,7 @@ const FileSystemVisualization = () => {
                   Step {currentStep + 1}: {stepDescriptions[currentStep]?.title}
                 </GradientText>
               </h3>
-              <p className="text-gray-300 text-lg">{stepDescriptions[currentStep]?.description}</p>
+              <p className="text-gray-300 text-lg">{stepDescriptions[currentStep]?.description.replace(/'/g, "&apos;").replace(/"/g, "&quot;")}</p>
             </div>
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -983,7 +983,7 @@ const FileSystemVisualization = () => {
                 <GradientText>File Creation Complete!</GradientText>
               </h3>
               <p className="text-gray-300 mb-6">
-                Successfully created "{fileName}" in the file system
+                Successfully created &quot;{fileName}&quot; in the file system
               </p>
               <div className="bg-gray-800/50 p-4 rounded-lg border border-white/10 mb-6">
                 <h4 className="text-lg font-bold text-green-400 mb-2">Summary</h4>
