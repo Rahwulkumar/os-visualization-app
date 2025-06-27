@@ -750,9 +750,9 @@ const FileSystemVisualization = () => {
         <div className="max-w-6xl mx-auto mt-8">
           <SpaceCard className="text-center">
             <div className="mb-6">
-              <h3 className="text-2xl font-bold mb-2">
-                <GradientText>
-                  Step {currentStep + 1}: {stepDescriptions[currentStep]?.title}
+              <h3 className="text-2xl font-bold mb-3">
+                <GradientText gradient={spaceColors.gradient.nebula}>
+                  Step {currentStep + 1}: {stepDescriptions[currentStep]?.title.replace(/'/g, "&apos;")}
                 </GradientText>
               </h3>
               <p className="text-gray-300 text-lg">{stepDescriptions[currentStep]?.description.replace(/'/g, "&apos;")}</p>
