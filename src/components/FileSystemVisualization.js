@@ -1,5 +1,5 @@
 'use client'
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   StarField, 
   NebulaBackground, 
@@ -136,7 +136,7 @@ const FileSystemVisualization = () => {
     newFileSize: newFileSize
   });
 
-  const stepDescriptions = [
+  const stepDescriptions = useMemo(() => ([
     {
       title: "User Request",
       description: "User initiates file creation",
@@ -155,7 +155,7 @@ const FileSystemVisualization = () => {
       intermediateFeedback: "The OS checks the directory's inode (#5) for write permissions (rwx).",
       realWorldContext: "The cloud app checks if you can save in the folder.",
       detailedExplanation: {
-        beginner: `Before creating any file, the computer checks if you have permission to add files to that folder. It's like checking if you have the key to a room before you can put something inside. The system looks at the folder's settings to see if you're allowed to write (add) files there.`,
+        beginner: `Before creating any file, the computer checks if you can add files to that folder. It's like checking if you have the key to a room before you can put something inside. The system looks at the folder's settings to see if you're allowed to write (add) files there.`,
         intermediate: `The kernel examines the target directory's inode to verify write permissions. It checks the permission bits (rwx for owner/group/others) and compares them against the current user's credentials (UID/GID). The directory must have write permission for the user to create new files. This security check prevents unauthorized file creation and maintains file system integrity.`
       }
     },
@@ -214,7 +214,7 @@ const FileSystemVisualization = () => {
         intermediate: `The kernel returns a file descriptor (a small integer) to the calling process, confirming successful file creation. This file descriptor serves as a handle for subsequent file operations (read, write, close). The system call completes, transitioning back to user mode, and the application receives confirmation that the file is ready for use. All file system structures are now consistent and persistent.`
       }
     }
-  ];
+  ]), [fileName, newFileSize, storedData]);
 
   // Auto-play functionality - REMOVED for manual control
 
@@ -755,7 +755,7 @@ const FileSystemVisualization = () => {
                   Step {currentStep + 1}: {stepDescriptions[currentStep]?.title}
                 </GradientText>
               </h3>
-              <p className="text-gray-300 text-lg">{stepDescriptions[currentStep]?.description.replace(/'/g, "&apos;").replace(/"/g, "&quot;")}</p>
+              <p className="text-gray-300 text-lg">{stepDescriptions[currentStep]?.description.replace(/'/g, "&apos;")}</p>
             </div>
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
