@@ -765,7 +765,7 @@ const FileSystemVisualization = () => {
                 <p className="text-white">{currentEvent}</p>
                 {stepDescriptions[currentStep] && (
                   <p className="text-gray-400 text-sm mt-2">
-                    💡 {stepDescriptions[currentStep].realWorldContext}
+                    💡 {stepDescriptions[currentStep].realWorldContext.replace(/'/g, "&apos;")}
                   </p>
                 )}
               </div>
@@ -774,7 +774,7 @@ const FileSystemVisualization = () => {
               <div className="bg-gray-800/50 p-4 rounded-lg border border-white/10">
                 <h4 className="text-lg font-bold text-purple-400 mb-2">Detailed Explanation</h4>
                 <p className="text-white text-sm leading-relaxed">
-                  {stepDescriptions[currentStep]?.detailedExplanation?.[mode]}
+                  {stepDescriptions[currentStep]?.detailedExplanation?.[mode]?.replace(/'/g, "&apos;")}
                 </p>
               </div>
             </div>
