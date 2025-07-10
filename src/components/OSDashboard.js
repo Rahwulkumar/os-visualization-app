@@ -9,6 +9,7 @@ import {
   GradientText,
   spaceColors 
 } from '../themes/spaceTheme';
+import Link from 'next/link';
 
 const OSDashboard = () => {
   const [hoveredCard, setHoveredCard] = useState(null);
@@ -106,16 +107,16 @@ const OSDashboard = () => {
       <nav className="relative z-30 border-b border-white/10 backdrop-blur-md">
         <div className="container mx-auto px-6 py-4">
           <div className="flex items-center justify-between">
-            <a href="/" className="flex items-center space-x-3">
+            <Link href="/" className="flex items-center space-x-3">
               <span className="text-2xl">🌌</span>
               <GradientText gradient={spaceColors.gradient.cosmic} className="text-2xl font-bold">
                 OS Visualization
               </GradientText>
-            </a>
+            </Link>
             <div className="flex items-center space-x-6">
-              <a href="/about" className="text-gray-300 hover:text-white transition-colors">About</a>
-              <a href="/docs" className="text-gray-300 hover:text-white transition-colors">Documentation</a>
-              <a href="/help" className="text-gray-300 hover:text-white transition-colors">Help</a>
+              <Link href="/about" className="text-gray-300 hover:text-white transition-colors">About</Link>
+              <Link href="/docs" className="text-gray-300 hover:text-white transition-colors">Documentation</Link>
+              <Link href="/help" className="text-gray-300 hover:text-white transition-colors">Help</Link>
             </div>
           </div>
         </div>
@@ -166,7 +167,7 @@ const OSDashboard = () => {
               onMouseEnter={() => setHoveredCard(concept.id)}
               onMouseLeave={() => setHoveredCard(null)}
             >
-              <a href={concept.href} className="block h-full">
+              <Link href={concept.href} className="block h-full">
                 <SpaceCard 
                   glowColor={concept.color}
                   className="h-full flex flex-col transform transition-all duration-500 hover:-translate-y-2"
@@ -223,7 +224,7 @@ const OSDashboard = () => {
                     </div>
                   </div>
                 </SpaceCard>
-              </a>
+              </Link>
             </div>
           ))}
         </div>
@@ -240,18 +241,18 @@ const OSDashboard = () => {
             and hands-on exercises to master operating system concepts.
           </p>
           <div className="flex flex-wrap justify-center gap-4">
-            <a
+            <Link
               href="/getting-started"
               className="px-8 py-3 rounded-full bg-gradient-to-r from-blue-600 to-purple-600 text-white font-medium hover:scale-105 transition-transform duration-300"
             >
               Getting Started Guide
-            </a>
-            <a
+            </Link>
+            <Link
               href="/sandbox"
               className="px-8 py-3 rounded-full border border-white/20 text-white font-medium hover:bg-white/10 transition-all duration-300"
             >
               Open Sandbox
-            </a>
+            </Link>
           </div>
         </div>
       </div>
