@@ -1,5 +1,6 @@
 'use client'
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import FileDeletionVisualization from './FileDeletionVisualization';
 import { 
   StarField, 
   NebulaBackground, 
@@ -26,6 +27,101 @@ const VisualizationStep = {
 const STORAGE_KEY = 'fileSystemVisualization';
 const DEFAULT_STORAGE_LIMIT = 1024; // KB
 const FILE_SIZE_RANGE = { min: 1, max: 50 }; // KB per file
+
+// File validation utilities
+const RESERVED_NAMES = ['CON', 'PRN', 'AUX', 'NUL', 'COM1', 'COM2', 'COM3', 'COM4', 'COM5', 'COM6', 'COM7', 'COM8', 'COM9', 'LPT1', 'LPT2', 'LPT3', 'LPT4', 'LPT5', 'LPT6', 'LPT7', 'LPT8', 'LPT9'];
+const INVALID_CHARS = /[<>:"/\\|?*\x00-\x1f]/g;
+const MAX_FILENAME_LENGTH = 255;
+const MAX_PATH_LENGTH = 4096;
+
+const validateFileName = (fileName) => {
+  const errors = [];
+  const warnings = [];
+
+  // Check if empty
+  if (!fileName || fileName.trim() === '') {
+    errors.push('Filename cannot be empty');
+    return { isValid: false, errors, warnings, sanitized: '' };
+  }
+
+  const trimmedName = fileName.trim();
+  let sanitized = trimmedName;
+
+  // Sanitize: Remove invalid characters
+  if (INVALID_CHARS.test(sanitized)) {
+    const invalidChars = sanitized.match(INVALID_CHARS);
+    errors.push(`Invalid characters found: ${[...new Set(invalidChars)].join(', ')}`);
+    sanitized = sanitized.replace(INVALID_CHARS, '');
+  }
+
+  // Sanitize: Remove leading/trailing spaces and dots
+  if (sanitized.startsWith(' ') || sanitized.endsWith(' ')) {
+    warnings.push('Filename has leading or trailing spaces');
+    sanitized = sanitized.trim();
+  }
+  if (sanitized.endsWith('.')) {
+    warnings.push('Filename ends with a dot');
+    sanitized = sanitized.replace(/\.+$/, '');
+  }
+
+  // Check length after sanitization
+  if (sanitized.length > MAX_FILENAME_LENGTH) {
+    errors.push(`Filename too long (${sanitized.length} > ${MAX_FILENAME_LENGTH} characters)`);
+    sanitized = sanitized.substring(0, MAX_FILENAME_LENGTH);
+  }
+
+  // Check for reserved names and handle them
+  const nameWithoutExt = sanitized.split('.')[0].toUpperCase();
+  if (RESERVED_NAMES.includes(nameWithoutExt)) {
+    errors.push(`"${nameWithoutExt}" is a reserved system name`);
+    // Sanitize by adding prefix
+    const extension = sanitized.includes('.') ? '.' + sanitized.split('.').pop() : '';
+    const baseName = sanitized.split('.')[0];
+    sanitized = `file_${baseName}${extension}`;
+  }
+
+  // Check if sanitized filename is empty
+  if (!sanitized || sanitized.trim() === '') {
+    errors.push('Filename becomes empty after removing invalid characters');
+    sanitized = 'file.txt'; // Default filename
+  }
+
+  // Add extension if missing
+  if (!sanitized.includes('.') || sanitized.lastIndexOf('.') === 0) {
+    warnings.push('No file extension specified');
+    if (!sanitized.includes('.')) {
+      sanitized += '.txt'; // Add default extension
+    }
+  }
+
+  // Check for hidden file
+  if (sanitized.startsWith('.') && sanitized !== '.' && sanitized !== '..') {
+    warnings.push('Hidden file (starts with dot)');
+  }
+
+  // Check for multiple extensions
+  const dots = (sanitized.match(/\./g) || []).length;
+  if (dots > 1) {
+    warnings.push('Multiple file extensions detected');
+  }
+
+  return { 
+    isValid: errors.length === 0, 
+    errors, 
+    warnings,
+    sanitized: sanitized
+  };
+};
+
+const checkDuplicateFileName = (fileName, existingFiles) => {
+  const normalizedName = fileName.toLowerCase().trim();
+  return existingFiles.some(file => file.name.toLowerCase() === normalizedName);
+};
+
+const checkPathLength = (fileName) => {
+  const fullPath = `/home/user/${fileName}`;
+  return fullPath.length <= MAX_PATH_LENGTH;
+};
 
 // Utility functions for storage management
 const getStoredData = () => {
@@ -111,10 +207,19 @@ const FileSystemVisualization = () => {
   const [currentEvent, setCurrentEvent] = useState('');
   const [showError, setShowError] = useState(false);
   const [errorType, setErrorType] = useState(null);
+  const [errorDetails, setErrorDetails] = useState(null);
+  const [fileCreated, setFileCreated] = useState(false); // Track if file was created for current session
+  const [validationResult, setValidationResult] = useState(null);
+  const [validationShownFor, setValidationShownFor] = useState(null); // Track which filename we've shown validation for
+  const [userAcknowledgedValidation, setUserAcknowledgedValidation] = useState(false); // Track if user has acknowledged current validation error
+  
+  // File deletion state
+  const [showDeletionVisualization, setShowDeletionVisualization] = useState(false);
+  const [selectedFileForDeletion, setSelectedFileForDeletion] = useState(null);
   
   // Storage management state
   const [storedData, setStoredData] = useState(getStoredData());
-  const [newFileSize, setNewFileSize] = useState(generateFileSize());
+  const [newFileSize, setNewFileSize] = useState(10); // Start with a default size
   const [showStorageSettings, setShowStorageSettings] = useState(false);
   const [tempStorageLimit, setTempStorageLimit] = useState(storedData.storageLimit);
   
@@ -123,6 +228,9 @@ const FileSystemVisualization = () => {
     const stored = getStoredData();
     setStoredData(stored);
     setFileSystem(getInitialFileSystem(stored.files));
+    
+    // Set a reasonable default file size
+    setNewFileSize(10);
   }, []);
 
   const [metrics, setMetrics] = useState({
@@ -225,10 +333,97 @@ const FileSystemVisualization = () => {
       setCurrentEvent(mode === 'beginner' ? currentStepDesc.beginnerFeedback : currentStepDesc.intermediateFeedback);
     }
 
-    // Check for storage full error at the right step
+    // Validation checks at appropriate steps
+    if (currentStep === VisualizationStep.USER_REQUEST && fileName && !showError) {
+      const validation = validateFileName(fileName);
+      setValidationResult(validation);
+      
+      // Only show error if validation failed and we haven't already shown it for this filename
+      if (!validation.isValid && !showError && errorType !== 'validation' && validationShownFor !== fileName && !userAcknowledgedValidation) {
+        setErrorType('validation');
+        setErrorDetails({
+          type: 'filename_invalid',
+          errors: validation.errors,
+          warnings: validation.warnings
+        });
+        setValidationShownFor(fileName); // Mark this filename as having been validated
+        setShowError(true);
+        return;
+      }
+    }
+
+    if (currentStep === VisualizationStep.PERMISSION_CHECK && !showError) {
+      // Simulate permission checks
+      const hasWritePermission = true; // In real OS, this would check actual permissions
+      if (!hasWritePermission) {
+        setErrorType('permission');
+        setErrorDetails({
+          type: 'permission_denied',
+          message: 'Write permission denied for target directory'
+        });
+        setShowError(true);
+        return;
+      }
+
+      // Check path length
+      if (!checkPathLength(fileName)) {
+        setErrorType('validation');
+        setErrorDetails({
+          type: 'path_too_long',
+          message: `Full path exceeds maximum length (${MAX_PATH_LENGTH} characters)`
+        });
+        setShowError(true);
+        return;
+      }
+    }
+
+    if (currentStep === VisualizationStep.INODE_ALLOCATION && !showError) {
+      // Check if we have free inodes
+      if (fileSystem && fileSystem.superblock.freeInodes <= 0) {
+        setErrorType('inode_full');
+        setErrorDetails({
+          type: 'no_free_inodes',
+          message: 'No free inodes available in file system'
+        });
+        setShowError(true);
+        return;
+      }
+    }
+
+    if (currentStep === VisualizationStep.DIRECTORY_UPDATE && !showError) {
+      // Check for duplicate filenames
+      if (checkDuplicateFileName(fileName, storedData.files) && errorType !== 'validation') {
+        setErrorType('validation');
+        setErrorDetails({
+          type: 'duplicate_name',
+          message: `File "${fileName}" already exists in this directory`
+        });
+        setShowError(true);
+        return;
+      }
+    }
+
+    // Check for storage full error at the disk block allocation step
     if (currentStep === VisualizationStep.DISK_BLOCK_ALLOCATION && !showError) {
       if (storedData.totalUsed + newFileSize > storedData.storageLimit) {
         setErrorType('storage_full');
+        setErrorDetails({
+          type: 'insufficient_space',
+          requested: newFileSize,
+          available: Math.max(0, storedData.storageLimit - storedData.totalUsed),
+          total: storedData.storageLimit
+        });
+        setShowError(true);
+        return;
+      }
+
+      // Check if we have free disk blocks
+      if (fileSystem && fileSystem.superblock.freeBlocks <= 0) {
+        setErrorType('disk_full');
+        setErrorDetails({
+          type: 'no_free_blocks',
+          message: 'No free disk blocks available'
+        });
         setShowError(true);
         return;
       }
@@ -281,37 +476,63 @@ const FileSystemVisualization = () => {
         }
         break;
       case VisualizationStep.RESPONSE_TO_USER:
-        if (!showError) {
-          // Actually save the file to localStorage
-          const newFile = {
-            name: fileName,
-            size: newFileSize,
-            created: new Date().toISOString(),
-            inode: 10 + storedData.files.length
-          };
-          
-          const updatedData = {
-            ...storedData,
-            files: [...storedData.files, newFile],
-            totalUsed: storedData.totalUsed + newFileSize
-          };
-          
-          setStoredData(updatedData);
-          saveStoredData(updatedData);
+        // Only create file once per session and if we haven't already created it
+        if (!fileCreated) {
+          if (!showError || errorType === 'storage_full') {
+            // Normal file creation when there's enough space, or forced creation for demo
+            const newFile = {
+              name: fileName,
+              size: newFileSize,
+              created: new Date().toISOString(),
+              inode: 10 + storedData.files.length,
+              hasError: showError && errorType === 'storage_full'
+            };
+            
+            const updatedData = {
+              ...storedData,
+              files: [...storedData.files, newFile],
+              totalUsed: storedData.totalUsed + newFileSize
+            };
+            
+            setStoredData(updatedData);
+            saveStoredData(updatedData);
+            setFileCreated(true); // Mark as created
+            
+            // Update metrics if there was a storage error
+            if (showError && errorType === 'storage_full') {
+              setMetrics(prev => ({ 
+                ...prev, 
+                storageUsed: updatedData.totalUsed,
+                diskSpaceUsed: `${((updatedData.totalUsed / updatedData.storageLimit) * 100).toFixed(2)}%`
+              }));
+            }
+          }
         }
         break;
     }
-  }, [currentStep, mode, fileName, newFileSize, storedData, showError, stepDescriptions]);
+  }, [currentStep, mode, fileName, newFileSize, storedData, showError, stepDescriptions, fileSystem, userAcknowledgedValidation]);
 
   const handleStepChange = (step) => {
     setCurrentStep(step);
     setShowError(false); // Clear any errors when manually changing steps
+    setErrorDetails(null);
+    setValidationResult(null);
+    setErrorType(null); // Also clear error type
+    setValidationShownFor(null); // Clear validation tracking
+    setUserAcknowledgedValidation(false); // Reset acknowledgment state
+    // Reset file creation flag when going back to start a new process
+    if (step === VisualizationStep.USER_REQUEST) {
+      setFileCreated(false);
+    }
   };
 
   const nextStep = () => {
     if (currentStep < VisualizationStep.RESPONSE_TO_USER) {
       setCurrentStep(currentStep + 1);
       setShowError(false);
+      setErrorDetails(null);
+      setErrorType(null); // Clear error type
+      setUserAcknowledgedValidation(false); // Reset acknowledgment when navigating
     }
   };
 
@@ -319,14 +540,22 @@ const FileSystemVisualization = () => {
     if (currentStep > VisualizationStep.USER_REQUEST) {
       setCurrentStep(currentStep - 1);
       setShowError(false);
+      setErrorDetails(null);
+      setErrorType(null); // Clear error type
+      setUserAcknowledgedValidation(false); // Reset acknowledgment when navigating
+      // Reset file creation flag when going back from response step
+      if (currentStep === VisualizationStep.RESPONSE_TO_USER) {
+        setFileCreated(false);
+      }
     }
   };
 
   const resetVisualization = () => {
     setCurrentStep(VisualizationStep.USER_REQUEST);
     setNewInode(null);
-    setNewFileSize(generateFileSize());
+    setFileCreated(false); // Reset file creation flag
     const stored = getStoredData();
+    // Keep the current file size instead of generating a new one
     setStoredData(stored);
     setFileSystem(getInitialFileSystem(stored.files));
     setMetrics({
@@ -337,9 +566,11 @@ const FileSystemVisualization = () => {
       directoryLinkCount: 1 + stored.files.length,
       storageUsed: stored.totalUsed,
       storageLimit: stored.storageLimit,
-      newFileSize: generateFileSize()
+      newFileSize: newFileSize // Keep current size
     });
     setShowError(false);
+    setValidationShownFor(null); // Reset validation tracking
+    setUserAcknowledgedValidation(false); // Reset acknowledgment state
   };
 
   const updateStorageLimit = (newLimit) => {
@@ -379,6 +610,34 @@ const FileSystemVisualization = () => {
     }));
   };
 
+  // File deletion visualization handlers
+  const startFileDeletion = (file) => {
+    setSelectedFileForDeletion(file);
+    setShowDeletionVisualization(true);
+  };
+
+  const completeDeletion = () => {
+    setShowDeletionVisualization(false);
+    setSelectedFileForDeletion(null);
+    // Refresh the current file system data
+    const stored = getStoredData();
+    setStoredData(stored);
+    setFileSystem(getInitialFileSystem(stored.files));
+    setMetrics(prev => ({
+      ...prev,
+      filesInFolder: 1 + stored.files.length,
+      diskSpaceUsed: `${((stored.totalUsed / stored.storageLimit) * 100).toFixed(2)}%`,
+      freeBlocks: 5000 - (4 + stored.files.length),
+      directoryLinkCount: 1 + stored.files.length,
+      storageUsed: stored.totalUsed
+    }));
+  };
+
+  const cancelDeletion = () => {
+    setShowDeletionVisualization(false);
+    setSelectedFileForDeletion(null);
+  };
+
   const clearAllFiles = () => {
     const clearedData = {
       files: [],
@@ -392,10 +651,53 @@ const FileSystemVisualization = () => {
 
   const simulateError = (type) => {
     setErrorType(type);
+    
+    switch (type) {
+      case 'permission':
+        setErrorDetails({
+          type: 'permission_denied',
+          message: 'Write permission denied for target directory'
+        });
+        break;
+      case 'full':
+        setErrorDetails({
+          type: 'no_free_inodes',
+          message: 'No free inodes available in file system'
+        });
+        break;
+      case 'storage_full':
+        setErrorDetails({
+          type: 'insufficient_space',
+          requested: newFileSize,
+          available: Math.max(0, storedData.storageLimit - storedData.totalUsed),
+          total: storedData.storageLimit
+        });
+        break;
+      case 'validation':
+        const validation = validateFileName('CON.txt'); // Example invalid name
+        setErrorDetails({
+          type: 'filename_invalid',
+          errors: validation.errors,
+          warnings: validation.warnings
+        });
+        break;
+    }
+    
     setShowError(true);
   };
 
   const isCompleted = currentStep === VisualizationStep.RESPONSE_TO_USER;
+
+  // Show deletion visualization if in deletion mode
+  if (showDeletionVisualization && selectedFileForDeletion) {
+    return (
+      <FileDeletionVisualization 
+        selectedFile={selectedFileForDeletion}
+        onComplete={completeDeletion}
+        onCancel={cancelDeletion}
+      />
+    );
+  }
 
   return (
     <div className="min-h-screen bg-black relative overflow-hidden">
@@ -443,16 +745,54 @@ const FileSystemVisualization = () => {
 
         {/* Controls */}
         <div className="flex justify-center items-center gap-4 mb-8 flex-wrap">
-          <div className="flex items-center gap-2">
+          <div className="relative flex items-center gap-2">
             <input
               type="text"
               value={fileName}
-              onChange={(e) => setFileName(e.target.value)}
-              className="px-4 py-2 bg-gray-900/50 border border-white/20 rounded-lg text-white placeholder-gray-400"
+              onChange={(e) => {
+                setFileName(e.target.value);
+                setValidationShownFor(null); // Reset validation tracking when filename changes
+                setUserAcknowledgedValidation(false); // Reset acknowledgment when filename changes
+              }}
+              className={`px-4 py-2 bg-gray-900/50 border rounded-lg text-white placeholder-gray-400 ${
+                validationResult && !validationResult.isValid 
+                  ? 'border-red-400/50' 
+                  : validationResult && validationResult.warnings.length > 0
+                  ? 'border-yellow-400/50'
+                  : 'border-white/20'
+              }`}
               placeholder="Enter filename"
             />
-            <div className="bg-gray-900/50 border border-white/20 rounded-lg px-3 py-2 text-sm text-gray-300">
-              Size: {newFileSize}KB
+            {validationResult && (
+              <div className="absolute top-full left-0 mt-1 p-2 bg-gray-900/90 border border-white/20 rounded text-xs z-10 max-w-xs">
+                {validationResult.errors.map((error, i) => (
+                  <div key={i} className="text-red-400">❌ {error}</div>
+                ))}
+                {validationResult.warnings.map((warning, i) => (
+                  <div key={i} className="text-yellow-400">⚠️ {warning}</div>
+                ))}
+              </div>
+            )}
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="bg-gray-900/50 border border-white/20 rounded-lg px-3 py-2 text-sm text-gray-300 flex items-center gap-2">
+              <label className="text-gray-400">Size:</label>
+              <input
+                type="number"
+                min={FILE_SIZE_RANGE.min}
+                max={FILE_SIZE_RANGE.max}
+                value={newFileSize}
+                onChange={(e) => {
+                  const size = Math.max(FILE_SIZE_RANGE.min, Math.min(FILE_SIZE_RANGE.max, parseInt(e.target.value) || FILE_SIZE_RANGE.min));
+                  setNewFileSize(size);
+                  setMetrics(prev => ({ ...prev, newFileSize: size }));
+                }}
+                className="w-16 px-2 py-1 bg-gray-800 border border-gray-600 rounded text-white text-center"
+              />
+              <span>KB</span>
+              {storedData.totalUsed + newFileSize > storedData.storageLimit && (
+                <span className="text-red-400 text-xs">⚠️ Won't fit!</span>
+              )}
             </div>
           </div>
           <div className="flex gap-2">
@@ -544,14 +884,29 @@ const FileSystemVisualization = () => {
                     {storedData.files.map((file, index) => (
                       <div key={index} className="flex items-center gap-2 group">
                         <span className="text-xl">📄</span>
-                        <span className="text-blue-300">{file.name}</span>
+                        <span className={`${file.hasError ? 'text-red-300' : 'text-blue-300'}`}>
+                          {file.name}
+                        </span>
                         <span className="text-xs text-gray-500">({file.size}KB)</span>
-                        <button
-                          onClick={() => deleteFile(index)}
-                          className="opacity-0 group-hover:opacity-100 ml-2 text-red-400 hover:text-red-300 text-xs transition-opacity"
-                        >
-                          🗑️
-                        </button>
+                        {file.hasError && (
+                          <span className="text-red-400 text-xs" title="Created with storage error">⚠️</span>
+                        )}
+                        <div className="opacity-0 group-hover:opacity-100 ml-2 flex gap-1 transition-opacity">
+                          <button
+                            onClick={() => startFileDeletion(file)}
+                            className="text-orange-400 hover:text-orange-300 text-xs"
+                            title="Visualize deletion process"
+                          >
+                            👁️
+                          </button>
+                          <button
+                            onClick={() => deleteFile(index)}
+                            className="text-red-400 hover:text-red-300 text-xs"
+                            title="Delete immediately"
+                          >
+                            🗑️
+                          </button>
+                        </div>
                       </div>
                     ))}
                     {currentStep >= VisualizationStep.DIRECTORY_UPDATE && !showError && (
@@ -576,13 +931,28 @@ const FileSystemVisualization = () => {
                   <div className="ml-12 text-gray-300">├── document.txt (inode #8)</div>
                   {storedData.files.map((file, index) => (
                     <div key={index} className="ml-12 text-blue-300 group flex items-center gap-2">
-                      ├── {file.name} (inode #{file.inode}) [{file.size}KB]
-                      <button
-                        onClick={() => deleteFile(index)}
-                        className="opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-300 text-xs transition-opacity"
-                      >
-                        🗑️
-                      </button>
+                      <span className={file.hasError ? 'text-red-300' : 'text-blue-300'}>
+                        ├── {file.name} (inode #{file.inode}) [{file.size}KB]
+                      </span>
+                      {file.hasError && (
+                        <span className="text-red-400 text-xs" title="Created with storage error">⚠️</span>
+                      )}
+                      <div className="opacity-0 group-hover:opacity-100 flex gap-1 transition-opacity">
+                        <button
+                          onClick={() => startFileDeletion(file)}
+                          className="text-orange-400 hover:text-orange-300 text-xs"
+                          title="Visualize deletion process"
+                        >
+                          👁️
+                        </button>
+                        <button
+                          onClick={() => deleteFile(index)}
+                          className="text-red-400 hover:text-red-300 text-xs"
+                          title="Delete immediately"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                   ))}
                   {currentStep >= VisualizationStep.DIRECTORY_UPDATE && !showError && (
@@ -682,8 +1052,15 @@ const FileSystemVisualization = () => {
                 </div>
                 <div className="bg-gray-800/50 p-3 rounded">
                   <div className="text-white font-bold">Storage Used</div>
-                  <div className="text-lg text-purple-400">{metrics.storageUsed} / {metrics.storageLimit} KB</div>
+                  <div className={`text-lg ${metrics.storageUsed > metrics.storageLimit ? 'text-red-400' : 'text-purple-400'}`}>
+                    {metrics.storageUsed} / {metrics.storageLimit} KB
+                  </div>
                   <div className="text-sm text-gray-400">({metrics.diskSpaceUsed})</div>
+                  {metrics.storageUsed > metrics.storageLimit && (
+                    <div className="text-xs text-red-400 mt-1">
+                      ⚠️ Storage exceeded by {metrics.storageUsed - metrics.storageLimit} KB
+                    </div>
+                  )}
                 </div>
                 <div className="bg-gray-800/50 p-3 rounded">
                   <div className="text-white font-bold">New File Size</div>
@@ -692,12 +1069,20 @@ const FileSystemVisualization = () => {
                 <div className="w-full bg-gray-700 rounded-full h-4">
                   <div 
                     className={`h-4 rounded-full transition-all duration-500 ${
-                      (metrics.storageUsed / metrics.storageLimit) > 0.8 
-                        ? 'bg-gradient-to-r from-red-500 to-red-600' 
+                      (metrics.storageUsed / metrics.storageLimit) > 1.0
+                        ? 'bg-gradient-to-r from-red-600 to-red-700'
+                        : (metrics.storageUsed / metrics.storageLimit) > 0.8 
+                        ? 'bg-gradient-to-r from-orange-500 to-red-500' 
                         : 'bg-gradient-to-r from-blue-500 to-purple-500'
                     }`}
                     style={{ width: `${Math.min((metrics.storageUsed / metrics.storageLimit) * 100, 100)}%` }}
                   />
+                  {/* Show overflow indicator */}
+                  {(metrics.storageUsed / metrics.storageLimit) > 1.0 && (
+                    <div className="mt-1 text-xs text-red-400 text-center">
+                      Storage overflow: {((metrics.storageUsed / metrics.storageLimit) * 100 - 100).toFixed(1)}% over capacity
+                    </div>
+                  )}
                 </div>
                 {storedData.files.length > 0 && (
                   <div className="pt-2">
@@ -801,35 +1186,209 @@ const FileSystemVisualization = () => {
 
         {/* Error Simulation */}
         {showError && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <SpaceCard className="max-w-md">
-              <h3 className="text-xl font-bold text-red-400 mb-4">Error Scenario</h3>
-              <p className="text-white mb-4">
-                {errorType === 'permission' && "Permission denied: Cannot write to directory"}
-                {errorType === 'full' && "File system full: No free inodes available"}
-                {errorType === 'storage_full' && `Storage full: Cannot allocate ${newFileSize}KB. Available: ${metrics.storageLimit - metrics.storageUsed}KB`}
-              </p>
-              <div className="bg-gray-800/50 p-3 rounded mb-4">
+          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+            <SpaceCard className="max-w-lg w-full">
+              <h3 className="text-xl font-bold text-red-400 mb-4">
+                {errorType === 'validation' ? 'Validation Error' : 'System Error'}
+              </h3>
+              
+              {/* Error Message */}
+              <div className="mb-4">
+                {errorType === 'permission' && (
+                  <p className="text-white">Permission denied: Cannot write to directory</p>
+                )}
+                {errorType === 'full' && (
+                  <p className="text-white">File system full: No free inodes available</p>
+                )}
+                {errorType === 'inode_full' && (
+                  <p className="text-white">Inode allocation failed: No free inodes available</p>
+                )}
+                {errorType === 'disk_full' && (
+                  <p className="text-white">Disk allocation failed: No free blocks available</p>
+                )}
+                {errorType === 'storage_full' && errorDetails && (
+                  <p className="text-white">
+                    Storage full: Cannot allocate {errorDetails.requested}KB. 
+                    Available: {errorDetails.available}KB
+                  </p>
+                )}
+                {errorType === 'validation' && errorDetails && (
+                  <div className="space-y-2">
+                    {errorDetails.type === 'filename_invalid' && (
+                      <>
+                        <p className="text-white">Invalid filename detected:</p>
+                        <div className="bg-gray-800/50 p-3 rounded">
+                          {errorDetails.errors.map((error, i) => (
+                            <div key={i} className="text-red-400 text-sm">❌ {error}</div>
+                          ))}
+                          {errorDetails.warnings.map((warning, i) => (
+                            <div key={i} className="text-yellow-400 text-sm">⚠️ {warning}</div>
+                          ))}
+                        </div>
+                      </>
+                    )}
+                    {errorDetails.type === 'duplicate_name' && (
+                      <p className="text-white">{errorDetails.message}</p>
+                    )}
+                    {errorDetails.type === 'path_too_long' && (
+                      <p className="text-white">{errorDetails.message}</p>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* Error Context */}
+              <div className="bg-gray-800/50 p-3 rounded mb-6">
                 <p className="text-sm text-gray-300">
+                  {errorType === 'validation' && errorDetails?.type === 'filename_invalid' && 
+                    'This error occurs during the "User Request" step when the filename violates OS naming conventions. The OS checks for invalid characters, reserved names, and length limits.'
+                  }
+                  {errorType === 'validation' && errorDetails?.type === 'duplicate_name' && 
+                    'This error occurs during the "Directory Update" step when a file with the same name already exists in the target directory.'
+                  }
+                  {errorType === 'validation' && errorDetails?.type === 'path_too_long' && 
+                    'This error occurs during the "Permission Check" step when the full file path exceeds the maximum allowed length.'
+                  }
                   {errorType === 'storage_full' && 
-                    `This error occurs during the "Disk Block Allocation" step when the file system doesn&apos;t have enough free space to store the new file. The OS checks available space before allocating blocks.`
+                    'This error occurs during the "Disk Block Allocation" step when the file system doesn\'t have enough free space. However, you can continue to see what happens when storage goes negative - this demonstrates poor error handling in some systems.'
                   }
                   {errorType === 'permission' && 
-                    "This error occurs during the \"Permission Check\" step when the user doesn&apos;t have write access to the target directory."
+                    'This error occurs during the "Permission Check" step when the user doesn\'t have write access to the target directory.'
                   }
-                  {errorType === 'full' && 
-                    "This error occurs during the \"Inode Allocation\" step when no free inodes are available for new files."
+                  {(errorType === 'full' || errorType === 'inode_full') && 
+                    'This error occurs during the "Inode Allocation" step when no free inodes are available for new files.'
+                  }
+                  {errorType === 'disk_full' && 
+                    'This error occurs during the "Disk Block Allocation" step when no free disk blocks are available for storing file data.'
                   }
                 </p>
               </div>
-              <div className="flex gap-2">
-                <SpaceButton onClick={() => setShowError(false)} variant="primary">
-                  Close
+
+              {/* Action Buttons */}
+              <div className="flex flex-col gap-3">
+                {errorType === 'validation' && errorDetails?.type === 'filename_invalid' && (
+                  <div className="flex gap-3">
+                    <SpaceButton 
+                      onClick={() => {
+                        const validation = validateFileName(fileName);
+                        if (validation.sanitized) {
+                          setFileName(validation.sanitized);
+                        }
+                        setShowError(false);
+                        setErrorDetails(null);
+                        setErrorType(null);
+                        setValidationResult(null);
+                        setUserAcknowledgedValidation(true); // Mark that user has acknowledged the validation error
+                      }} 
+                      variant="cosmic"
+                      className="flex-1 text-sm"
+                    >
+                      Auto-Fix
+                    </SpaceButton>
+                    <SpaceButton 
+                      onClick={() => {
+                        setShowError(false);
+                        setErrorDetails(null);
+                        setErrorType(null);
+                        setValidationResult(null);
+                        setUserAcknowledgedValidation(true); // Mark that user has acknowledged the validation error
+                        setCurrentStep(VisualizationStep.USER_REQUEST);
+                      }} 
+                      variant="secondary"
+                      className="flex-1 text-sm"
+                    >
+                      Fix Manually
+                    </SpaceButton>
+                  </div>
+                )}
+                
+                {errorType === 'validation' && errorDetails?.type === 'duplicate_name' && (
+                  <div className="flex gap-3">
+                    <SpaceButton 
+                      onClick={() => {
+                        const baseName = fileName.split('.')[0];
+                        const extension = fileName.includes('.') ? '.' + fileName.split('.').pop() : '';
+                        let counter = 1;
+                        let newName;
+                        do {
+                          newName = `${baseName}_${counter}${extension}`;
+                          counter++;
+                        } while (checkDuplicateFileName(newName, storedData.files));
+                        setFileName(newName);
+                        setShowError(false);
+                        setErrorDetails(null);
+                        setErrorType(null);
+                        setValidationResult(null);
+                        setUserAcknowledgedValidation(true); // Mark that user has acknowledged the validation error
+                      }} 
+                      variant="cosmic"
+                      className="flex-1 text-sm"
+                    >
+                      Auto-Rename
+                    </SpaceButton>
+                    <SpaceButton 
+                      onClick={() => {
+                        setShowError(false);
+                        setErrorDetails(null);
+                        setErrorType(null);
+                        setValidationResult(null);
+                        setUserAcknowledgedValidation(true); // Mark that user has acknowledged the validation error
+                        setCurrentStep(VisualizationStep.USER_REQUEST);
+                      }} 
+                      variant="secondary"
+                      className="flex-1 text-sm"
+                    >
+                      Choose New Name
+                    </SpaceButton>
+                  </div>
+                )}
+
+                <SpaceButton 
+                  onClick={() => {
+                    setShowError(false);
+                    setErrorDetails(null);
+                    setErrorType(null);
+                    setUserAcknowledgedValidation(true); // Mark that user has acknowledged the validation error
+                    if (errorType === 'validation') {
+                      setValidationResult(null);
+                    }
+                  }} 
+                  variant="primary"
+                  className="w-full"
+                >
+                  {errorType === 'storage_full' ? 'Continue Anyway' : 'Acknowledge'}
                 </SpaceButton>
+                
                 {errorType === 'storage_full' && (
-                  <SpaceButton onClick={() => setShowStorageSettings(true)} variant="secondary">
-                    Manage Storage
-                  </SpaceButton>
+                  <div className="flex gap-3">
+                    <SpaceButton 
+                      onClick={() => {
+                        setShowStorageSettings(true);
+                      }} 
+                      variant="secondary"
+                      className="flex-1 text-sm"
+                    >
+                      Manage Storage
+                    </SpaceButton>
+                    <SpaceButton 
+                      onClick={() => {
+                        const availableSpace = storedData.storageLimit - storedData.totalUsed;
+                        const newSize = Math.max(FILE_SIZE_RANGE.min, Math.min(availableSpace - 1, FILE_SIZE_RANGE.max));
+                        
+                        setFileCreated(false);
+                        setNewFileSize(newSize);
+                        setMetrics(prev => ({ ...prev, newFileSize: newSize }));
+                        setShowError(false);
+                        setErrorDetails(null);
+                        setErrorType(null);
+                        setCurrentStep(VisualizationStep.USER_REQUEST);
+                      }} 
+                      variant="cosmic"
+                      className="flex-1 text-sm"
+                    >
+                      Try Smaller File
+                    </SpaceButton>
+                  </div>
                 )}
               </div>
             </SpaceCard>
@@ -896,8 +1455,16 @@ const FileSystemVisualization = () => {
                           <div className="flex items-center gap-2">
                             <span className="text-gray-400">{file.size} KB</span>
                             <button
+                              onClick={() => startFileDeletion(file)}
+                              className="text-orange-400 hover:text-orange-300 transition-colors"
+                              title="Visualize deletion process"
+                            >
+                              👁️
+                            </button>
+                            <button
                               onClick={() => deleteFile(index)}
                               className="text-red-400 hover:text-red-300 transition-colors"
+                              title="Delete immediately"
                             >
                               🗑️
                             </button>
@@ -949,24 +1516,34 @@ const FileSystemVisualization = () => {
               <GradientText>Error Scenarios</GradientText>
             </h3>
             <div className="flex gap-4 flex-wrap">
-              <button
+              <SpaceButton
                 onClick={() => simulateError('permission')}
-                className="px-4 py-2 bg-red-600/20 border border-red-400/30 rounded text-red-400 hover:bg-red-600/30 transition-all"
+                variant="secondary"
+                className="text-red-400 bg-red-600/20 border-red-400/30 hover:bg-red-600/30"
               >
                 🚫 Permission Denied
-              </button>
-              <button
+              </SpaceButton>
+              <SpaceButton
                 onClick={() => simulateError('full')}
-                className="px-4 py-2 bg-orange-600/20 border border-orange-400/30 rounded text-orange-400 hover:bg-orange-600/30 transition-all"
+                variant="secondary"
+                className="text-orange-400 bg-orange-600/20 border-orange-400/30 hover:bg-orange-600/30"
               >
-                💾 File System Full
-              </button>
-              <button
+                💾 Inode Full
+              </SpaceButton>
+              <SpaceButton
                 onClick={() => simulateError('storage_full')}
-                className="px-4 py-2 bg-yellow-600/20 border border-yellow-400/30 rounded text-yellow-400 hover:bg-yellow-600/30 transition-all"
+                variant="secondary"
+                className="text-yellow-400 bg-yellow-600/20 border-yellow-400/30 hover:bg-yellow-600/30"
               >
                 💽 Storage Full
-              </button>
+              </SpaceButton>
+              <SpaceButton
+                onClick={() => simulateError('validation')}
+                variant="secondary"
+                className="text-purple-400 bg-purple-600/20 border-purple-400/30 hover:bg-purple-600/30"
+              >
+                ⚠️ Invalid Filename
+              </SpaceButton>
             </div>
             <p className="text-gray-400 text-sm mt-2">
               Test different error scenarios to understand when and why file creation can fail
